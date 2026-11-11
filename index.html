@@ -26,7 +26,7 @@ input{font:inherit;flex:1;min-width:0;padding:10px 12px;border:1px solid var(--b
 </style></head><body>
 <div class="tot"><div><b id="tin">0</b> <span id="tof"></span></div><span id="tre"></span></div>
 <div class="row"><button class="p" id="photo">📸 Scanner (photo)</button><button id="scan">📷 En direct</button><button id="add">+ Sur place</button><button id="load">Charger la liste</button><input type="file" id="lf" accept=".json,application/json" hidden></div>
-<div id="cam"><video id="v" playsinline muted></video></div>
+<div id="cam"><video id="v" playsinline muted></video></div><div id="st" style="color:var(--mu);font-size:13px;margin:4px 2px"></div>
 <div id="msg" role="status"></div>
 <div class="row"><input id="q" placeholder="Chercher un nom ou un code (ex. CV012)" autocomplete="off"></div>
 <div id="list"></div>
@@ -10166,16 +10166,21 @@ function handle(code){
 // caméra
 let stream=null,raf=0,last='',lastT=0;
 async function startCam(){
-  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});}
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720},advanced:[{focusMode:'continuous'}]}});}
   catch(e){show('ko','Caméra indisponible','Autorisez la caméra dans le navigateur, ou utilisez « Scanner (photo) » ou la recherche par nom.');return}
   const v=$('v');v.srcObject=stream;await v.play();$('cam').style.display='block';$('scan').textContent='Arrêter la caméra';tick()}
 function stopCam(){cancelAnimationFrame(raf);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('cam').style.display='none';$('scan').textContent='📷 En direct'}
+let bd=null;try{if('BarcodeDetector' in window)bd=new BarcodeDetector({formats:['qr_code']})}catch(e){}
+let busy=0,eng=bd?'natif':'jsQR',nf=0;
 function tick(){
   const v=$('v');if(!stream)return;
-  if(v.videoWidth){const c=$('cv'),x=c.getContext('2d',{willReadFrequently:true});c.width=v.videoWidth;c.height=v.videoHeight;x.drawImage(v,0,0);
-    const r=jsQR(x.getImageData(0,0,c.width,c.height).data,c.width,c.height);
-    if(r&&r.data&&(r.data!==last||Date.now()-lastT>3000)){last=r.data;lastT=Date.now();handle(r.data)}}
-  raf=requestAnimationFrame(tick)}
+  if(v.videoWidth&&!busy){busy=1;nf++;$('st').textContent='Lecture active ('+eng+') · '+nf+' images analysées';(async()=>{try{let d=null;
+    if(bd){try{const r=await bd.detect(v);if(r&&r[0])d=r[0].rawValue;eng='natif'}catch(e){bd=null;eng='jsQR'}}
+    if(!d){const c=$('cv'),x=c.getContext('2d',{willReadFrequently:true});const sc=Math.min(1,960/v.videoWidth);c.width=Math.round(v.videoWidth*sc);c.height=Math.round(v.videoHeight*sc);x.drawImage(v,0,0,c.width,c.height);
+      const r=jsQR(x.getImageData(0,0,c.width,c.height).data,c.width,c.height);if(r)d=r.data}
+    if(d&&(d!==last||Date.now()-lastT>3000)){last=d;lastT=Date.now();handle(d)}
+  }catch(e){}busy=0})()}
+  setTimeout(()=>{raf=requestAnimationFrame(tick)},100)}
 $('scan').onclick=()=>stream?stopCam():startCam();
 const pi=document.createElement('input');pi.type='file';pi.accept='image/*';pi.setAttribute('capture','environment');pi.hidden=true;document.body.appendChild(pi);
 $('photo').onclick=()=>{pi.value='';pi.click()};
